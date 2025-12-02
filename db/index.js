@@ -1,76 +1,183 @@
-const fileDB = require('./file');
-const recordUtils = require('./record');
-const vaultEvents = require('../events');
+const { Record, connectDB, isConnected } = require('./mongodb');
 const backup = require('./backup');
+const vaultEvents = require('../events');
 
-function addRecord({ name, value }) {
-  recordUtils.validateRecord({ name, value });
-  const data = fileDB.readDB();
-  const newRecord = { id: recordUtils.generateId(), name, value };
-  data.push(newRecord);
-  fileDB.writeDB(data);
-  
-  // Create backup after adding record
-  backup.createBackup(data, 'add');
-  
-  vaultEvents.emit('recordAdded', newRecord);
-  return newRecord;
+// Database connection state
+let dbInitialized = false;
+
+// Initialize database connection
+async function initializeDB() {
+  if (!dbInitialized) {
+    console.log('🔄 Initializing MongoDB database...');
+    dbInitialized = await connectDB();
+    if (dbInitialized) {
+      console.log('✅ MongoDB database ready');
+    } else {
+      console.log('⚠️  MongoDB connection failed');
+    }
+  }
+  return dbInitialized;
 }
 
-function listRecords() {
-  return fileDB.readDB();
+// Helper function to convert MongoDB document to app format
+function formatRecord(record) {
+  return {
+    id: record._id.toString(),
+    name: record.name,
+    value: record.value,
+    createdAt: record.createdAt.getTime()
+  };
 }
 
-function updateRecord(id, newName, newValue) {
-  const data = fileDB.readDB();
-  const record = data.find(r => r.id === id);
-  if (!record) return null;
-  record.name = newName;
-  record.value = newValue;
-  fileDB.writeDB(data);
-  vaultEvents.emit('recordUpdated', record);
-  return record;
+// Wait for database to be ready
+async function ensureDB() {
+  if (!isConnected()) {
+    await initializeDB();
+  }
+  return isConnected();
 }
 
-function deleteRecord(id) {
-  let data = fileDB.readDB();
-  const record = data.find(r => r.id === id);
-  if (!record) return null;
-  data = data.filter(r => r.id !== id);
-  fileDB.writeDB(data);
-  
-  // Create backup after deleting record
-  backup.createBackup(data, 'delete');
-  
-  vaultEvents.emit('recordDeleted', record);
-  return record;
-}
-
-// Optional: Add a manual backup function
-function createManualBackup() {
-  const data = fileDB.readDB();
-  return backup.createBackup(data, 'manual');
-}
-
-// Optional: Add a restore function
-function restoreFromLatestBackup() {
-  const latest = backup.getLatestBackup();
-  if (!latest) {
-    console.log('No backup found to restore from.');
-    return false;
+// MongoDB Database Functions
+async function addRecord({ name, value }) {
+  const connected = await ensureDB();
+  if (!connected) {
+    throw new Error('Database not connected. Please check MongoDB service.');
   }
   
   try {
-    const backupData = JSON.parse(fs.readFileSync(latest.path, 'utf8'));
-    fileDB.writeDB(backupData.records);
-    console.log(`✅ Restored from backup: ${latest.name}`);
-    console.log(`📊 Restored ${backupData.records.length} records`);
+    const record = new Record({ name, value });
+    await record.save();
+    
+    // Create backup
+    const allRecords = await listRecords();
+    backup.createBackup(allRecords, 'add');
+    
+    vaultEvents.emit('recordAdded', record);
+    
+    console.log(`✅ Record added to MongoDB: ${name}`);
+    return formatRecord(record);
+  } catch (error) {
+    console.error('❌ Error adding record to MongoDB:', error.message);
+    throw error;
+  }
+}
+
+async function listRecords() {
+  const connected = await ensureDB();
+  if (!connected) {
+    console.log('⚠️  Database not connected, returning empty list');
+    return [];
+  }
+  
+  try {
+    const records = await Record.find({}).sort({ createdAt: -1 });
+    return records.map(formatRecord);
+  } catch (error) {
+    console.error('❌ Error listing records from MongoDB:', error.message);
+    return [];
+  }
+}
+
+async function updateRecord(id, newName, newValue) {
+  const connected = await ensureDB();
+  if (!connected) {
+    console.log('⚠️  Database not connected');
+    return null;
+  }
+  
+  try {
+    const record = await Record.findById(id);
+    if (!record) {
+      console.log(`⚠️  Record with ID ${id} not found in MongoDB`);
+      return null;
+    }
+    
+    record.name = newName;
+    record.value = newValue;
+    await record.save();
+    
+    vaultEvents.emit('recordUpdated', record);
+    
+    console.log(`✅ Record updated in MongoDB: ${newName}`);
+    return formatRecord(record);
+  } catch (error) {
+    console.error('❌ Error updating record in MongoDB:', error.message);
+    return null;
+  }
+}
+
+async function deleteRecord(id) {
+  const connected = await ensureDB();
+  if (!connected) {
+    console.log('⚠️  Database not connected');
+    return null;
+  }
+  
+  try {
+    const record = await Record.findByIdAndDelete(id);
+    if (!record) {
+      console.log(`⚠️  Record with ID ${id} not found in MongoDB`);
+      return null;
+    }
+    
+    // Create backup after deletion
+    const allRecords = await listRecords();
+    backup.createBackup(allRecords, 'delete');
+    
+    vaultEvents.emit('recordDeleted', record);
+    
+    console.log(`✅ Record deleted from MongoDB: ${record.name}`);
+    return formatRecord(record);
+  } catch (error) {
+    console.error('❌ Error deleting record from MongoDB:', error.message);
+    return null;
+  }
+}
+
+// Additional functions
+async function getRecordCount() {
+  const connected = await ensureDB();
+  if (!connected) return 0;
+  
+  try {
+    return await Record.countDocuments();
+  } catch (error) {
+    console.error('❌ Error counting records in MongoDB:', error.message);
+    return 0;
+  }
+}
+
+async function clearAllRecords() {
+  const connected = await ensureDB();
+  if (!connected) return false;
+  
+  try {
+    await Record.deleteMany({});
+    console.log('✅ All records cleared from MongoDB');
     return true;
   } catch (error) {
-    console.error(`❌ Restore failed: ${error.message}`);
+    console.error('❌ Error clearing records from MongoDB:', error.message);
     return false;
   }
 }
+
+// Keep existing functions for compatibility
+function createManualBackup() {
+  console.log('Manual backup function - needs records to be passed');
+  return null;
+}
+
+async function restoreFromLatestBackup() {
+  console.log('Restore function not implemented for MongoDB yet');
+  return false;
+}
+
+// Initialize on require
+initializeDB().then(initialized => {
+  if (initialized) {
+    console.log('📊 Database module loaded successfully');
+  }
+});
 
 module.exports = { 
   addRecord, 
@@ -78,5 +185,8 @@ module.exports = {
   updateRecord, 
   deleteRecord,
   createManualBackup,
-  restoreFromLatestBackup
+  restoreFromLatestBackup,
+  getRecordCount,
+  clearAllRecords,
+  initializeDB
 };
