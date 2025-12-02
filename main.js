@@ -154,6 +154,89 @@ function exportData() {
   menu();
 }
 
+// View Vault Statistics Function
+function viewVaultStatistics() {
+  const records = db.listRecords();
+  const dbFilePath = path.join(__dirname, 'data', 'vault.json');
+  
+  console.log(`\n╔═══════════════════════════════════════╗`);
+  console.log(`║         VAULT STATISTICS             ║`);
+  console.log(`╚═══════════════════════════════════════╝`);
+  
+  // Total number of records
+  console.log(`\nTotal Records: ${records.length}`);
+  console.log(`--------------------------`);
+  
+  if (records.length === 0) {
+    console.log(`Vault is empty. Add some records to see statistics.`);
+    menu();
+    return;
+  }
+  
+  // Date and time of the most recent modification (file modification time)
+  try {
+    const stats = fs.statSync(dbFilePath);
+    const lastModified = new Date(stats.mtime);
+    const formattedLastModified = `${lastModified.toISOString().split('T')[0]} ${lastModified.toTimeString().split(' ')[0]}`;
+    console.log(`Last Modified: ${formattedLastModified}`);
+  } catch (error) {
+    console.log(`Last Modified: Unable to determine`);
+  }
+  
+  // The longest name (and its length)
+  let longestName = '';
+  let longestNameLength = 0;
+  
+  records.forEach(record => {
+    if (record.name.length > longestNameLength) {
+      longestNameLength = record.name.length;
+      longestName = record.name;
+    }
+  });
+  
+  console.log(`Longest Name: ${longestName} (${longestNameLength} characters)`);
+  
+  // The earliest and latest record creation dates
+  let earliestDate = new Date(Math.min(...records.map(r => r.id)));
+  let latestDate = new Date(Math.max(...records.map(r => r.id)));
+  
+  console.log(`Earliest Record: ${earliestDate.toISOString().split('T')[0]}`);
+  console.log(`Latest Record: ${latestDate.toISOString().split('T')[0]}`);
+  
+  // Additional Statistics (bonus)
+  console.log(`\n📊 Additional Statistics:`);
+  console.log(`--------------------------`);
+  
+  // Average name length
+  const totalNameLength = records.reduce((sum, record) => sum + record.name.length, 0);
+  const avgNameLength = (totalNameLength / records.length).toFixed(2);
+  console.log(`Average Name Length: ${avgNameLength} characters`);
+  
+  // Date range
+  const dateRangeDays = Math.ceil((latestDate - earliestDate) / (1000 * 60 * 60 * 24));
+  console.log(`Date Range: ${dateRangeDays} day(s)`);
+  
+  // Records per day (if range > 0)
+  if (dateRangeDays > 0) {
+    const recordsPerDay = (records.length / dateRangeDays).toFixed(2);
+    console.log(`Records per Day: ${recordsPerDay}`);
+  }
+  
+  // Most common name length
+  const nameLengths = records.map(r => r.name.length);
+  const lengthCounts = {};
+  nameLengths.forEach(length => {
+    lengthCounts[length] = (lengthCounts[length] || 0) + 1;
+  });
+  
+  const mostCommonLength = Object.keys(lengthCounts).reduce((a, b) => 
+    lengthCounts[a] > lengthCounts[b] ? a : b
+  );
+  console.log(`Most Common Name Length: ${mostCommonLength} characters (${lengthCounts[mostCommonLength]} records)`);
+  
+  menu();
+}
+
 function menu() {
   console.log(`
 ===== NodeVault =====
@@ -164,7 +247,8 @@ function menu() {
 5. Search Records
 6. Sort Records
 7. Export Data
-8. Exit
+8. View Vault Statistics
+9. Exit
 =====================
   `);
 
@@ -220,6 +304,10 @@ function menu() {
         break;
 
       case '8':
+        viewVaultStatistics();
+        break;
+
+      case '9':
         console.log('👋 Exiting NodeVault...');
         rl.close();
         break;
