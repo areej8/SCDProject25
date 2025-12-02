@@ -1,4 +1,6 @@
 const readline = require('readline');
+const fs = require('fs');
+const path = require('path');
 const db = require('./db');
 require('./events/logger'); // Initialize event logger
 
@@ -97,6 +99,61 @@ function sortRecords() {
   });
 }
 
+// Export Data Function
+function exportData() {
+  const records = db.listRecords();
+  const exportFilePath = path.join(__dirname, 'export.txt');
+  const exportDate = new Date();
+  
+  // Format date and time nicely
+  const formattedDate = exportDate.toISOString().split('T')[0];
+  const formattedTime = exportDate.toTimeString().split(' ')[0];
+  
+  // Prepare export content
+  let exportContent = `===========================================\n`;
+  exportContent += `          NODEVAULT DATA EXPORT\n`;
+  exportContent += `===========================================\n`;
+  exportContent += `Export Date: ${formattedDate}\n`;
+  exportContent += `Export Time: ${formattedTime}\n`;
+  exportContent += `Total Records: ${records.length}\n`;
+  exportContent += `File: export.txt\n`;
+  exportContent += `===========================================\n\n`;
+  
+  if (records.length === 0) {
+    exportContent += `No records found in the vault.\n`;
+  } else {
+    exportContent += `RECORDS LIST:\n`;
+    exportContent += `===========================================\n`;
+    
+    records.forEach((record, index) => {
+      const createdDate = new Date(record.id).toISOString().split('T')[0];
+      const createdTime = new Date(record.id).toTimeString().split(' ')[0];
+      
+      exportContent += `\nRECORD #${index + 1}\n`;
+      exportContent += `-------------------------------------------\n`;
+      exportContent += `ID:        ${record.id}\n`;
+      exportContent += `Name:      ${record.name}\n`;
+      exportContent += `Value:     ${record.value}\n`;
+      exportContent += `Created:   ${createdDate} ${createdTime}\n`;
+    });
+    
+    exportContent += `\n===========================================\n`;
+    exportContent += `End of Export - ${records.length} record(s) total\n`;
+  }
+  
+  // Write to file
+  try {
+    fs.writeFileSync(exportFilePath, exportContent, 'utf8');
+    console.log(`✅ Data exported successfully to export.txt`);
+    console.log(`📊 Total records exported: ${records.length}`);
+    console.log(`📁 File location: ${exportFilePath}`);
+  } catch (error) {
+    console.log(`❌ Error exporting data: ${error.message}`);
+  }
+  
+  menu();
+}
+
 function menu() {
   console.log(`
 ===== NodeVault =====
@@ -106,7 +163,8 @@ function menu() {
 4. Delete Record
 5. Search Records
 6. Sort Records
-7. Exit
+7. Export Data
+8. Exit
 =====================
   `);
 
@@ -158,6 +216,10 @@ function menu() {
         break;
 
       case '7':
+        exportData();
+        break;
+
+      case '8':
         console.log('👋 Exiting NodeVault...');
         rl.close();
         break;
