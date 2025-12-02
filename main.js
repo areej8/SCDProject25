@@ -21,12 +21,79 @@ function searchRecords() {
     } else {
       console.log(`Found ${matches.length} matching records:`);
       matches.forEach((record, index) => {
-        // Convert timestamp to date format: 2025-11-04
         const createdDate = new Date(record.id).toISOString().split('T')[0];
         console.log(`${index + 1}. ID: ${record.id} | Name: ${record.name} | Created: ${createdDate}`);
       });
     }
     menu();
+  });
+}
+
+// Sort Records Function
+function sortRecords() {
+  // Ask for sort field
+  rl.question('Choose field to sort by (Name/Date): ', sortField => {
+    const normalizedField = sortField.trim().toLowerCase();
+    
+    if (normalizedField !== 'name' && normalizedField !== 'date') {
+      console.log('Invalid field. Please choose either "Name" or "Date".');
+      menu();
+      return;
+    }
+    
+    // Ask for sort order
+    rl.question('Choose order (Ascending/Descending): ', sortOrder => {
+      const normalizedOrder = sortOrder.trim().toLowerCase();
+      
+      if (normalizedOrder !== 'ascending' && normalizedOrder !== 'descending') {
+        console.log('Invalid order. Please choose either "Ascending" or "Descending".');
+        menu();
+        return;
+      }
+      
+      // Get records and sort them
+      const records = db.listRecords();
+      let sortedRecords = [...records]; // Create a copy to avoid modifying original
+      
+      if (normalizedField === 'name') {
+        // Sort by name
+        sortedRecords.sort((a, b) => {
+          const nameA = a.name.toLowerCase();
+          const nameB = b.name.toLowerCase();
+          if (normalizedOrder === 'ascending') {
+            return nameA.localeCompare(nameB);
+          } else {
+            return nameB.localeCompare(nameA);
+          }
+        });
+      } else {
+        // Sort by creation date (ID is timestamp)
+        sortedRecords.sort((a, b) => {
+          if (normalizedOrder === 'ascending') {
+            return a.id - b.id; // Older dates first
+          } else {
+            return b.id - a.id; // Newer dates first
+          }
+        });
+      }
+      
+      // Display sorted records
+      console.log(`\nSorted Records (${sortField} - ${sortOrder}):`);
+      if (sortedRecords.length === 0) {
+        console.log('No records to display.');
+      } else {
+        sortedRecords.forEach((record, index) => {
+          if (normalizedField === 'name') {
+            console.log(`${index + 1}. ID: ${record.id} | Name: ${record.name}`);
+          } else {
+            const createdDate = new Date(record.id).toISOString().split('T')[0];
+            console.log(`${index + 1}. ID: ${record.id} | Name: ${record.name} | Created: ${createdDate}`);
+          }
+        });
+      }
+      
+      menu();
+    });
   });
 }
 
@@ -38,7 +105,8 @@ function menu() {
 3. Update Record
 4. Delete Record
 5. Search Records
-6. Exit
+6. Sort Records
+7. Exit
 =====================
   `);
 
@@ -86,6 +154,10 @@ function menu() {
         break;
 
       case '6':
+        sortRecords();
+        break;
+
+      case '7':
         console.log('👋 Exiting NodeVault...');
         rl.close();
         break;
