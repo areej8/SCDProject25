@@ -1,6 +1,7 @@
 const fileDB = require('./file');
 const recordUtils = require('./record');
 const vaultEvents = require('../events');
+const backup = require('./backup');
 
 function addRecord({ name, value }) {
   recordUtils.validateRecord({ name, value });
@@ -8,6 +9,10 @@ function addRecord({ name, value }) {
   const newRecord = { id: recordUtils.generateId(), name, value };
   data.push(newRecord);
   fileDB.writeDB(data);
+  
+  // Create backup after adding record
+  backup.createBackup(data, 'add');
+  
   vaultEvents.emit('recordAdded', newRecord);
   return newRecord;
 }
@@ -33,8 +38,45 @@ function deleteRecord(id) {
   if (!record) return null;
   data = data.filter(r => r.id !== id);
   fileDB.writeDB(data);
+  
+  // Create backup after deleting record
+  backup.createBackup(data, 'delete');
+  
   vaultEvents.emit('recordDeleted', record);
   return record;
 }
 
-module.exports = { addRecord, listRecords, updateRecord, deleteRecord };
+// Optional: Add a manual backup function
+function createManualBackup() {
+  const data = fileDB.readDB();
+  return backup.createBackup(data, 'manual');
+}
+
+// Optional: Add a restore function
+function restoreFromLatestBackup() {
+  const latest = backup.getLatestBackup();
+  if (!latest) {
+    console.log('No backup found to restore from.');
+    return false;
+  }
+  
+  try {
+    const backupData = JSON.parse(fs.readFileSync(latest.path, 'utf8'));
+    fileDB.writeDB(backupData.records);
+    console.log(`✅ Restored from backup: ${latest.name}`);
+    console.log(`📊 Restored ${backupData.records.length} records`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Restore failed: ${error.message}`);
+    return false;
+  }
+}
+
+module.exports = { 
+  addRecord, 
+  listRecords, 
+  updateRecord, 
+  deleteRecord,
+  createManualBackup,
+  restoreFromLatestBackup
+};
