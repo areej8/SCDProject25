@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # MongoDB Database Service
+  mongodb:
+    image: mongo:6
+    container_name: nodevault-mongodb-compose
+    networks:
+      - nodevault-network
+    volumes:
+      - mongodb-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # NodeVault Application Service
+  backend:
+    build: .  
+    container_name: nodevault-backend-compose
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - nodevault-network
+    ports:
+      - "${APP_PORT}:3000"
+    environment:
+      MONGODB_URI: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/${MONGO_DATABASE}?authSource=admin
+      PORT: 3000
+      NODE_ENV: ${NODE_ENV}
+      APP_NAME: ${APP_NAME}
+      BACKUP_DIR: ${BACKUP_DIR}
+      MAX_BACKUPS: ${MAX_BACKUPS}
+    restart: unless-stopped
+
+# Custom bridge network
+networks:
+  nodevault-network:
+    driver: bridge
+    name: nodevault-compose-network
+
+# Named volumes for data persistence
+volumes:
+  mongodb-data:
+    name: nodevault-compose-mongodb-data
